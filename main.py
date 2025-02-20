@@ -32,9 +32,7 @@ def main():
     #         return result["response"] if isinstance(result, dict) else str(result)
     
     def chat(question, history):
-            # is_rag_related(question, vectorstore_for_search)
             result = chatbot.invoke({"question": question})
-            print("Using RAG-based retrieval...")
             return result["answer"] if isinstance(result, dict) else str(result)
         
     print("Launching chat interface...")

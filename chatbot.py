@@ -51,7 +51,8 @@ def setup_chatbot(vectorstore, model=MODEL_NAME, temperature=TEMPERATURE):
         memory=memory
         )
     
-    return conversation_chain, vectorstore, non_retrieval_chain
+    # return conversation_chain, vectorstore, non_retrieval_chain
+    return conversation_chain, vectorstore
 
 def preprocess_query(query):
     # Remove leading courtesy phrases from the query.
