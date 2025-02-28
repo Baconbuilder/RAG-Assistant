@@ -1,8 +1,8 @@
-# Retrieval-Augmented Generation (RAG) Chatbot / Assistant 
+# Bilingual Retrieval-Augmented Generation (RAG) Chatbot / Assistant 
 
-This project implements a Retrieval-Augmented Generation (RAG) chatbot using Langchain and Ollama for document retrieval and question answering, with Gradio providing an interactive web interface.
+This project implements a Retrieval-Augmented Generation (RAG) chatbot using Langchain 0.3 and Ollama for document retrieval and question answering, with Gradio providing an interactive web interface.
 
-The chatbot utilizes llama 3.2 as the large language model (LLM) and nomic-embed-text as the embedding model. It is designed to load and process PDF documents from users, split them into retrievable chunks, and provide accurate, context-based answers.
+The chatbot leverages Llama 3.2 as the large language model (LLM) and Snowflake's Arctic Embed 2.0 as the embedding model. It is designed to load and process both English and Mandarin PDF documents, split them into retrievable chunks, and generate context-aware answers in either language.
 
 ## How to Run
 
@@ -27,7 +27,7 @@ Additionally, pull the required Ollama models:
 
 ```
 ollama pull llama3.2
-ollama pull nomic-embed-text
+ollama pull snowflake-arctic-embed2
 ```
 
 ### Preparing Documents
@@ -82,8 +82,9 @@ The Gradio interface will launch in your default browser, allowing you to chat w
 
 ## Key Features
 
-- **Document Ingestion:** Load and process PDF documents from structured folders.
+- **Multilingual Support:** Processes and retrieves information from English and Mandarin documents, allowing queries in both languages.
 - **RAG-based QA:** Retrieve contextually relevant document chunks for accurate answers.
+- **Document Ingestion:** Load and process PDF documents from structured folders.
 - **Conversational Memory:** Retains chat history for smoother interactions.
 - **Gradio Interface:** A clean and user-friendly web interface for interactions.
 
