@@ -1,83 +1,80 @@
 # chatbot.py
 from langchain_ollama import ChatOllama
-from config import MODEL_NAME, TEMPERATURE
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain, ConversationChain
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
 import re
+from config import MODEL_NAME, TEMPERATURE
+
+def detect_query_language(query):
+    """Detect if query is primarily in Chinese"""
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', query))
+    if chinese_chars > len(query) * 0.2:  # If more than 20% Chinese characters
+        return "zh"
+    return "en"
+
 
 def setup_chatbot(vectorstore, model=MODEL_NAME, temperature=TEMPERATURE):
+    # Initialize LLM
     llm = ChatOllama(temperature=temperature, model=model)
-    memory = ConversationBufferMemory(memory_key='chat_history', return_messages=True)
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
     
-    prompt = PromptTemplate(
-        input_variables=["question", "context"],
-        template=(
-            "You are a helpful assistant that helps explain content from the documents. "
-            "Provide accurate responses based on the available documents. "
-            "If you don't know the answer, just say that you don't know. "
-            "If a question is general (e.g., hi, thanks), respond politely without retrieving documents.\n\n"
-            "Context: {context}\n\nQuestion: {question}"
-        )
+    # Initialize retriever with appropriate number of documents, k can be adjusted
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+    condense_question_system_template = (
+        "Given a chat history and the latest user question "
+        "which might reference context in the chat history, "
+        "formulate a standalone question which can be understood "
+        "without the chat history. Do NOT answer the question, "
+        "just reformulate it if needed and otherwise return it as is."
     )
-    
-    general_template = (
-        "The following is a conversation between a human and an AI assistant. "
-        "The AI provides detailed, accurate, and contextually grounded responses, "
-        "similar to how it would if it had access to documents. "
-        "If the AI does not know the answer, it should truthfully say so. "
-        "Answer in a factual and helpful manner.\n\n"
-        "Current conversation:\n"
-        "{chat_history}\n"
-        "Human: {input}\n"
-        "AI Assistant:"
+
+    condense_question_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", condense_question_system_template),
+            ("placeholder", "{chat_history}"),
+            ("human", "{input}"),
+        ]
     )
-    
-    prompt_2 = PromptTemplate(input_variables=["chat_history", "input"], template=general_template)
-
-    conversation_chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=retriever,
-        memory=memory,
-        combine_docs_chain_kwargs={"prompt": prompt},
-        rephrase_question=False
-        
+    history_aware_retriever = create_history_aware_retriever(
+        llm, retriever=retriever, prompt=condense_question_prompt
     )
-    
-    non_retrieval_chain = ConversationChain(
-        prompt=prompt_2,
-        llm=llm, 
-        memory=memory
-        )
-    
-    # return conversation_chain, vectorstore, non_retrieval_chain
-    return conversation_chain, vectorstore
 
-def preprocess_query(query):
-    # Remove leading courtesy phrases from the query.
-    query = query.lower().strip()
+    # English prompt template for document chain
+    en_prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful assistant that explains content from documents. "
+                "Provide accurate responses based on the available documents. "
+                "If you don't know the answer, just say that you don't know."
+                "If the user doesnt ask for the source of the answer, don't provide the source of the answer."
+                "\n\n"
+                "{context}"),
+        ("placeholder", "{chat_history}"),
+        ("human", "{input}"),
+    ])
     
-    courtesy_pattern = r'^(thanks[!,.]*(\s+|$)|thank you[!,.]*(\s+|$)|hi[!,.]*(\s+|$)|hello[!,.]*(\s+|$)|hey[!,.]*(\s+|$))'
-    # Remove courtesy phrases from the start.
-    return re.sub(courtesy_pattern, '', query, flags=re.IGNORECASE)
-
-def is_rag_related(question, vectorstore, similarity_threshold=0.3):
-    # Checks if the question is related to stored documents by performing a similarity search that returns scores
-    # If the top document has a similarity score above the threshold, it is considered rag related
+    # Chinese prompt template for document chain
+    zh_prompt = ChatPromptTemplate.from_messages([
+        ("system", "你是一個幫忙解釋文件內容的助理。"
+                "請根據可用文件提供可準確的回答。"
+                "如果你不知道答案，直接說你不知道"
+                "如果使用者沒有要求回答的來源，請不要提供回答的來源。"
+                "請使用繁體中文進行回答。"
+                "\n\n"
+                "{context}"),
+        ("placeholder", "{chat_history}"),
+        ("human", "{input}"),
+    ])
     
-    processed_question = preprocess_query(question)
+    # Create document chains for each language
+    en_document_chain = create_stuff_documents_chain(llm, en_prompt)
+    zh_document_chain = create_stuff_documents_chain(llm, zh_prompt)
     
-    if not processed_question:
-        # print("Query identified as courtesy-only. Skipping RAG.")
-        return False
+    # Create retrieval chains using the create_retrieval_chain method
+    en_retrieval_chain = create_retrieval_chain(history_aware_retriever, en_document_chain)
+    zh_retrieval_chain = create_retrieval_chain(history_aware_retriever, zh_document_chain)
     
-    # docs_with_scores = vectorstore.similarity_search_with_score(question)
-    docs_with_scores = vectorstore.similarity_search_with_relevance_scores(question)
-    if docs_with_scores:
-        doc, score = docs_with_scores[0]
-        doc.metadata["similarity_score"] = score
-        # print("Similarity score:", score)
-        if score >= similarity_threshold:
-            return True
-    return False
+    
+    # Return all chains along with vectorstore
+    return {
+        "en_retrieval": en_retrieval_chain,
+        "zh_retrieval": zh_retrieval_chain,
+    }, vectorstore
